@@ -46,11 +46,11 @@ inputs:
     required: false
     default: "6.12.y"
   debs_install:
-    description: "Install kernel debs files"
+    description: "Install kernel debs files."
     required: false
     default: "none"
   dtbs_install:
-    description: "Install kernel dtbs files"
+    description: "Install kernel dtbs files."
     required: false
     default: "false"
 
@@ -61,52 +61,59 @@ runs:
       run: |
         cd ${{ github.action_path }}
         echo -e "ophub package actions path: [ ${PWD} ]"
+
+        # Get build target
         build_target="${{ inputs.build_target }}"
         [[ -z "${build_target}" ]] && build_target="fnnas"
 
+        # Get fnnas file input parameters, set work directory
+        fnnas_filename="${{ inputs.fnnas_path }}"
+        fnnas_savefile="${fnnas_filename##*/}"
+        fnnas_savepath="fnnas-arm64"
+        fnnas_outpath="fnnas/out"
+        echo -e "Get fnnas file input parameters: [ ${fnnas_filename} ]"
+        [[ -z "${fnnas_filename}" ]] && echo -e "The [ fnnas_path ] variable must be specified." && exit 1
+        [[ -d "${fnnas_savepath}" ]] || mkdir -p ${fnnas_savepath}
+        [[ -d "${fnnas_outpath}" ]] || mkdir -p ${fnnas_outpath}
+
+        # Download or copy fnnas file
+        if [[ "${fnnas_filename}" =~ ^http ]]; then
+            echo -e "Download file: [ ${fnnas_filename} ]"
+            curl -fsSL "${fnnas_filename}" -o "${fnnas_savepath}/${fnnas_savefile}"
+        else
+            if [[ -z "$(ls ${fnnas_savepath}/${fnnas_savefile} 2>/dev/null)" ]]; then
+                echo -e "Copy fnnas rootfs file: [ ${fnnas_filename} ]"
+                if [[ "${fnnas_filename}" =~ ^/ ]]; then
+                    cp -vf ${fnnas_filename} ${fnnas_savepath}/ || true
+                else
+                    cp -vf ${{ github.workspace }}/${fnnas_filename} ${fnnas_savepath}/ || true
+                fi
+            else
+                echo -e "The [ ${fnnas_savepath}/${fnnas_savefile} ] file already exists, skipping."
+            fi
+        fi
+        sync
+        echo -e "About the [ ${fnnas_savepath} ] directory: \n$(ls -lh ${fnnas_savepath} 2>/dev/null)"
+
+        # Verify fnnas file format
+        cd ${fnnas_savepath}
+        echo -e "Check the fnnas file format..."
+        down_file="$(ls -l *.img* 2>/dev/null | grep "^-" | awk '{print $9}' | sort -u | head -n 1)"
+        if [[ -n "${down_file}" ]]; then
+            echo -e "Selected fnnas file: [ ${down_file} ]"
+        else
+            echo -e "The fnnas file is invalid."
+            exit 1
+        fi
+
+        # Decompress fnnas file
+        [[ "${down_file:0-7}" == ".img.gz" ]] && gzip -df ${down_file} 2>/dev/null && sync
+        [[ "${down_file:0-7}" == ".img.xz" ]] && xz -d ${down_file} 2>/dev/null && sync
+        [[ "${down_file:0-4}" == ".zip" ]] && unzip -o ${down_file} 2>/dev/null && sync
+        echo -e "fnnas file: \n$(ls -lh *.img 2>/dev/null)"
+
         if [[ "${build_target}" == "fnnas" ]]; then
             echo -e "Start rebuilding fnnas..."
-
-            fnnas_filename="${{ inputs.fnnas_path }}"
-            fnnas_savefile="${fnnas_filename##*/}"
-            fnnas_savepath="fnnas-arm64"
-            fnnas_outpath="fnnas/out"
-            echo -e "Get fnnas file input parameters: [ ${fnnas_filename} ]"
-            [[ -z "${fnnas_filename}" ]] && echo -e "The [ fnnas_path ] variable must be specified." && exit 1
-            [[ -d "${fnnas_savepath}" ]] || mkdir -p ${fnnas_savepath}
-            [[ -d "${fnnas_outpath}" ]] || mkdir -p ${fnnas_outpath}
-
-            if [[ "${fnnas_filename}" =~ ^http ]]; then
-                echo -e "Download file: [ ${fnnas_filename} ]"
-                curl -fsSL "${fnnas_filename}" -o "${fnnas_savepath}/${fnnas_savefile}"
-            else
-                if [[ -z "$(ls ${fnnas_savepath}/${fnnas_savefile} 2>/dev/null)" ]]; then
-                    echo -e "Copy fnnas rootfs file: [ ${fnnas_filename} ]"
-                    if [[ "${fnnas_filename}" =~ ^/ ]]; then
-                        cp -vf ${fnnas_filename} ${fnnas_savepath}/ || true
-                    else
-                        cp -vf ${{ github.workspace }}/${fnnas_filename} ${fnnas_savepath}/ || true
-                    fi
-                else
-                    echo -e "The [ ${fnnas_savepath}/${fnnas_savefile} ] file already exists, skipping."
-                fi
-            fi
-            sync
-            echo -e "About the [ ${fnnas_savepath} ] directory: \n$(ls -lh ${fnnas_savepath} 2>/dev/null)"
-
-            cd ${fnnas_savepath}
-            echo -e "Check the fnnas file format..."
-            down_file="$(ls -l *.img* 2>/dev/null | grep "^-" | awk '{print $9}' | sort -u | head -n 1)"
-            if [[ -n "${down_file}" ]]; then
-                echo -e "Selected fnnas file: [ ${down_file} ]"
-            else
-                echo -e "The fnnas file is invalid."
-                exit 1
-            fi
-            [[ "${down_file:0-7}" == ".img.gz" ]] && gzip -df ${down_file} 2>/dev/null && sync
-            [[ "${down_file:0-7}" == ".img.xz" ]] && xz -d ${down_file} 2>/dev/null && sync
-            [[ "${down_file:0-4}" == ".zip" ]] && unzip -o ${down_file} 2>/dev/null && sync
-            echo -e "fnnas file: \n$(ls -lh *.img 2>/dev/null)"
 
             cd ${{ github.action_path }}
             echo -e "Start to make fnnas..."
@@ -119,16 +126,6 @@ runs:
             [[ -n "${{ inputs.builder_name }}" ]] && make_command="${make_command} -n ${{ inputs.builder_name }}"
             read -r -a make_args <<< "${make_command}"
             sudo ./renas "${make_args[@]}"
-
-            cd ${{ github.action_path }}
-            echo -e "Output environment variables."
-            echo "PACKAGED_OUTPUTPATH=${PWD}/${fnnas_outpath}" >> ${GITHUB_ENV}
-            echo "PACKAGED_OUTPUTDATE=$(date +"%m.%d.%H%M")" >> ${GITHUB_ENV}
-            echo "PACKAGED_STATUS=success" >> ${GITHUB_ENV}
-            echo -e "PACKAGED_OUTPUTPATH: ${PWD}/${fnnas_outpath}"
-            echo -e "PACKAGED_OUTPUTDATE: $(date +"%m.%d.%H%M")"
-            echo -e "PACKAGED_STATUS: success"
-            echo -e "PACKAGED_OUTPUTPATH files list: \n$(ls -lh ${PWD}/${fnnas_outpath}/ 2>/dev/null)"
 
         elif [[ "${build_target}" == "kernel" ]]; then
             echo -e "Start to make fnnas kernel..."
@@ -146,20 +143,22 @@ runs:
             read -r -a make_args <<< "${make_command}"
             sudo ./rekernel "${make_args[@]}"
 
-            cd ${{ github.action_path }}
-            echo -e "Output environment variables."
-            echo "PACKAGED_OUTPUTPATH=${PWD}/${kernel_outpath}" >> ${GITHUB_ENV}
-            echo "PACKAGED_OUTPUTDATE=$(date +"%m.%d.%H%M")" >> ${GITHUB_ENV}
-            echo "PACKAGED_STATUS=success" >> ${GITHUB_ENV}
-            echo -e "PACKAGED_OUTPUTPATH: ${PWD}/${kernel_outpath}"
-            echo -e "PACKAGED_OUTPUTDATE: $(date +"%m.%d.%H%M")"
-            echo -e "PACKAGED_STATUS: success"
-            echo -e "PACKAGED_OUTPUTPATH files list: \n$(ls -lh ${PWD}/${kernel_outpath}/ 2>/dev/null)"
-
         else
             echo -e "Please select a build target: fnnas / kernel"
             exit 1
         fi
+
+        # Output environment variables
+        cd ${{ github.action_path }}
+        echo -e "Output environment variables."
+        echo "PACKAGED_OUTPUTPATH=${PWD}/${fnnas_outpath}" >> ${GITHUB_ENV}
+        echo "PACKAGED_OUTPUTDATE=$(date +"%m.%d.%H%M")" >> ${GITHUB_ENV}
+        echo "PACKAGED_STATUS=success" >> ${GITHUB_ENV}
+        echo -e "PACKAGED_OUTPUTPATH: ${PWD}/${fnnas_outpath}"
+        echo -e "PACKAGED_OUTPUTDATE: $(date +"%m.%d.%H%M")"
+        echo -e "PACKAGED_STATUS: success"
+        echo -e "PACKAGED_OUTPUTPATH files list: \n$(ls -lh ${PWD}/${fnnas_outpath}/ 2>/dev/null)"
+
 branding:
   icon: "terminal"
   color: "gray-dark"

@@ -155,6 +155,7 @@ jobs:
         if: ${{ steps.down.outputs.status }} == 'success' && !cancelled()
         with:
           build_target: kernel
+          fnnas_path: fnnas/*.img.xz
           debs_repo: ${{ inputs.debs_repo }}
           debs_version: ${{ inputs.debs_version }}
           debs_install: ${{ inputs.debs_install }}
