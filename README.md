@@ -71,17 +71,29 @@ fnnas-install
 | Optional | Default | Options | Description       |
 | -------- | ------- | ------- | ----------------- |
 | -m       | no      | yes/no  | Use mainline u-boot |
-| -a       | yes     | yes/no  | Use [ampart](https://github.com/7Ji/ampart) partition adjustment tool |
+| -a       | no      | yes/no  | Use [ampart](https://github.com/7Ji/ampart) partition adjustment tool |
 | -l       | no      | yes/no  | Show full device list |
 
 Example: `fnnas-install -m yes -a no`
-Note: If the available disk space exceeds `16 GiB`, the installer will prompt you to customize the RootFS partition size (Default: `16 GiB`).
+
+> [!TIP]
+> Partition option description: Customizing the system rootfs size is available when disk space exceeds 16GiB (Default: 16GiB).
+>
+> During the system re-installation process, the script automatically detects the partition structure on the eMMC. If a personal data partition (P3) is detected, Option `3` will be activated in the menu. Selecting this option strictly preserves the current partition table layout, thereby ensuring that the data within the P3 partition is not overwritten. Upon completion of the installation, you can directly mount and access the partition via the 'Storage Manager' interface in FnOS.
+
+| Optional | Description |
+| :------: | :---------- |
+| **1**    | Rootfs partition limit to **16GiB**.                           |
+| **2**    | **[default]** Rootfs partition expand to full disk (**100%**). |
+| **3**    | **Retain current Rootfs size** (Preserve P3 Data).             |
+| **≥16**  | Enter a number (**GiB**) to specify Rootfs partition size.     |
 
 - ### Update FnNAS Kernel
 
 Login to FnNAS system SSH terminal → Enter command:
 
 ```shell
+sudo -i
 fnnas-update
 ```
 
